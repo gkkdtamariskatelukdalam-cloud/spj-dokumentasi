@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 const ALLOWED_MIME = [
   "image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif",
 ];
@@ -45,7 +45,7 @@ export async function POST(
     for (const f of files) {
       if (!(f instanceof File)) continue;
       if (f.size === 0) { errors.push(`${f.name}: file kosong`); continue; }
-      if (f.size > MAX_FILE_SIZE) { errors.push(`${f.name}: melebihi 15 MB`); continue; }
+      if (f.size > MAX_FILE_SIZE) { errors.push(`${f.name}: melebihi 4 MB`); continue; }
 
       const mime = f.type || "image/jpeg";
       if (!ALLOWED_MIME.includes(mime) && !mime.startsWith("image/")) {

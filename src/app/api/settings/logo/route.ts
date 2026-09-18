@@ -5,7 +5,7 @@ import { storeFile } from "@/lib/file-storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 
 const ALLOWED_EXT: Record<string, string> = {
   png: "image/png",
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "Ukuran melebihi 5 MB" }, { status: 400 });
+      return NextResponse.json({ error: "Ukuran melebihi 4 MB" }, { status: 400 });
     }
 
     const ext = (file.name.toLowerCase().split(".").pop() || "").trim();

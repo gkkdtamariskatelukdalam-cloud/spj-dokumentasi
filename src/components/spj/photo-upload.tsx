@@ -243,7 +243,7 @@ export function PhotoUpload({ orderId, onUploaded, photoCount = 0 }: Props) {
               : "Klik untuk memilih file atau drag & drop"}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            JPG, PNG, WebP, HEIC — maks 15 MB per file — bisa banyak file
+            JPG, PNG, WebP, HEIC — maks 4 MB per file — bisa banyak file
             sekaligus
           </p>
         </div>
