@@ -36,6 +36,9 @@ export async function GET(req: NextRequest) {
     const format = (searchParams.get("format") || "full") as
       | "full"
       | "lampiran";
+    // Date range filter (for mode=all)
+    const startDate = searchParams.get("startDate") || "";
+    const endDate = searchParams.get("endDate") || "";
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -46,6 +49,10 @@ export async function GET(req: NextRequest) {
     } else if (mode === "bku" && bku) {
       where.noBku = { contains: bku };
     }
+
+    // Date range filter: filter by tanggalPesanan (format DD/MM/YYYY in Excel)
+    // We filter in-memory after fetch since tanggalPesanan is stored as String (not Date)
+    // This is handled after fetch below
 
     // Fetch orders with items, legacy photos (SpjPhoto), and documentation photos (via PhotoOrderLink)
     const orders = await db.spjOrder.findMany({
@@ -61,7 +68,34 @@ export async function GET(req: NextRequest) {
       orderBy: [{ noPesanan: "asc" }],
     });
 
-    if (orders.length === 0) {
+    // ===== Date range filter (in-memory, since tanggalPesanan is String "DD/MM/YYYY") =====
+    // Parse "DD/MM/YYYY" to Date object for comparison
+    function parseDateStr(s: string | null): Date | null {
+      if (!s) return null;
+      const parts = s.split("/");
+      if (parts.length < 3) return null;
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      let y = parseInt(parts[2], 10);
+      if (y < 100) y += 2000;
+      return new Date(y, m, d);
+    }
+
+    let filteredOrders = orders;
+    if (startDate || endDate) {
+      const start = startDate ? new Date(startDate + "T00:00:00") : null;
+      const end = endDate ? new Date(endDate + "T23:59:59") : null;
+
+      filteredOrders = orders.filter((o) => {
+        const orderDate = parseDateStr(o.tanggalPesanan);
+        if (!orderDate) return false; // skip if date can't be parsed
+        if (start && orderDate < start) return false;
+        if (end && orderDate > end) return false;
+        return true;
+      });
+    }
+
+    if (filteredOrders.length === 0) {
       return NextResponse.json(
         { error: "Tidak ada data yang cocok dengan filter" },
         { status: 404 }
@@ -69,7 +103,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Numeric sort
-    orders.sort((a, b) => {
+    filteredOrders.sort((a, b) => {
       const na = parseInt(a.noPesanan, 10);
       const nb = parseInt(b.noPesanan, 10);
       if (!Number.isNaN(na) && !Number.isNaN(nb) && na !== nb) return na - nb;
@@ -77,15 +111,15 @@ export async function GET(req: NextRequest) {
     });
 
     // Compute summary
-    const totalItems = orders.reduce(
+    const totalItems = filteredOrders.reduce(
       (acc, o) => acc + o.items.length,
       0
     );
-    const totalPhotos = orders.reduce(
+    const totalPhotos = filteredOrders.reduce(
       (acc, o) => acc + o.photos.length,
       0
     );
-    const grandTotal = orders.reduce((acc, o) => {
+    const grandTotal = filteredOrders.reduce((acc, o) => {
       return (
         acc +
         o.items.reduce((s, it) => {
@@ -114,7 +148,7 @@ export async function GET(req: NextRequest) {
       // Deduplicate by filePath to avoid showing the same photo twice
       // (migration may have created both SpjPhoto and DocumentationPhoto for same file)
       const ordersWithMeta = await Promise.all(
-        orders.map(async (o) => {
+        filteredOrders.map(async (o) => {
           // Collect all unique photo URLs from both sources
           const seenUrls = new Set<string>();
           const allPhotos: Array<{
@@ -172,7 +206,7 @@ export async function GET(req: NextRequest) {
         bku,
         orders: ordersWithMeta,
         summary: {
-          totalOrders: orders.length,
+          totalOrders: filteredOrders.length,
           totalItems,
           totalPhotos,
           grandTotal,
@@ -204,7 +238,7 @@ export async function GET(req: NextRequest) {
       includePhotos,
       includeItems,
       summary: {
-        totalOrders: orders.length,
+        totalOrders: filteredOrders.length,
         totalItems,
         totalPhotos,
         grandTotal,
@@ -649,7 +683,7 @@ function renderReport(ctx: ReportContext): string {
   </div>
 
   ${
-    orders.length > 1
+    filteredOrders.length > 1
       ? renderTOC(orders)
       : ""
   }
@@ -943,7 +977,7 @@ interface LampiranContext {
 function renderLampiran(ctx: LampiranContext): string {
   const { mode, bku, orders, baseUrl } = ctx;
 
-  const totalPages = orders.length;
+  const totalPages = filteredOrders.length;
   const sections = orders
     .map((o, idx) => renderLampiranOrderSection(o, idx + 1, totalPages, baseUrl))
     .join("\n");

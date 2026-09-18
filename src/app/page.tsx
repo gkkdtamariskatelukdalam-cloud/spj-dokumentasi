@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Moon, Sun, Loader2, Inbox, LayoutDashboard, Table2, Images, Settings, LogOut } from "lucide-react";
+import { Search, Moon, Sun, Loader2, Inbox, LayoutDashboard, Table2, Images, Settings, LogOut, Download } from "lucide-react";
 import { useTheme } from "next-themes";
 import { StatsCards } from "@/components/spj/stats-cards";
 import { OrderTable } from "@/components/spj/order-table";
@@ -246,6 +246,14 @@ export default function HomePage() {
               triggerIcon="printer"
             />
             <ImportDialog onImported={() => { void refreshStats(); void refreshOrders(); }} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { window.open("/api/export?status=all", "_blank"); }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline">Export Excel</span>
+            </Button>
             {mounted && (
               <Button
                 variant="ghost"

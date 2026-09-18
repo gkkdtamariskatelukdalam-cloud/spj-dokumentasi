@@ -84,6 +84,9 @@ export function ReportDialog({
   const [includePhotos, setIncludePhotos] = React.useState(true);
   const [includeItems, setIncludeItems] = React.useState(true);
   const [generating, setGenerating] = React.useState(false);
+  // Date range filter (for mode=all)
+  const [startDate, setStartDate] = React.useState<string>("");
+  const [endDate, setEndDate] = React.useState<string>("");
 
   // Load all orders for the searchable dropdown (mode=order)
   // Fetch all 208 orders so user can search any of them.
@@ -146,6 +149,9 @@ export function ReportDialog({
     } else if (mode === "bku") {
       params.set("bku", bkuSearch.trim());
     }
+    // Date range filter (optional, for mode=all)
+    if (mode === "all" && startDate) params.set("startDate", startDate);
+    if (mode === "all" && endDate) params.set("endDate", endDate);
     // For lampiran format, photos are always included (it's photo-only);
     // items toggle is ignored. For full format, respect toggles.
     if (format === "full") {
@@ -296,16 +302,58 @@ export function ReportDialog({
           )}
 
           {mode === "all" && (
-            <Card className="bg-muted/40">
-              <CardContent className="p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground mb-1">
-                  📄 Laporan Lengkap
+            <div className="space-y-3">
+              <Card className="bg-muted/40">
+                <CardContent className="p-3 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1">
+                    📄 Laporan Lengkap
+                  </p>
+                  Akan mencetak <strong>208 No. Pesanan</strong> dengan cover
+                  page, daftar isi, dan halaman terpisah per order. Estimasi{" "}
+                  <strong>200+ halaman</strong> jika semua foto disertakan.
+                </CardContent>
+              </Card>
+              {/* Date range filter */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="start-date" className="text-xs text-muted-foreground">
+                    Dari Tanggal Pesanan
+                  </Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="end-date" className="text-xs text-muted-foreground">
+                    Sampai Tanggal Pesanan
+                  </Label>
+                  <Input
+                    id="end-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+              {(startDate || endDate) && (
+                <p className="text-xs text-muted-foreground">
+                  📅 Filter aktif: {startDate || "awal"} → {endDate || "akhir"}
+                  {" "}
+                  <button
+                    type="button"
+                    className="text-primary underline"
+                    onClick={() => { setStartDate(""); setEndDate(""); }}
+                  >
+                    Hapus filter
+                  </button>
                 </p>
-                Akan mencetak <strong>208 No. Pesanan</strong> dengan cover
-                page, daftar isi, dan halaman terpisah per order. Estimasi{" "}
-                <strong>200+ halaman</strong> jika semua foto disertakan.
-              </CardContent>
-            </Card>
+              )}
+            </div>
           )}
 
           {/* Options — only relevant for full format */}
