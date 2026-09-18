@@ -147,8 +147,19 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const spjApi = {
-  async getStats(): Promise<Stats> {
-    return jsonFetch<Stats>("/api/stats", { cache: "no-store" });
+  /**
+   * GET /api/stats
+   * @param yearId optional — if provided (and not "all"), filter stats by year.
+   * Pass `undefined` or `"all"` to include all years.
+   */
+  async getStats(yearId?: string): Promise<Stats> {
+    const qs = new URLSearchParams();
+    if (yearId && yearId !== "all") qs.set("yearId", yearId);
+    const suffix = qs.toString();
+    return jsonFetch<Stats>(
+      suffix ? `/api/stats?${suffix}` : "/api/stats",
+      { cache: "no-store" }
+    );
   },
 
   async listOrders(params: {
@@ -156,12 +167,15 @@ export const spjApi = {
     status?: OrderStatus | "all";
     page?: number;
     pageSize?: number;
+    yearId?: string;
   }): Promise<OrderListResponse> {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.status) qs.set("status", params.status);
     if (params.page) qs.set("page", String(params.page));
     if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+    if (params.yearId && params.yearId !== "all")
+      qs.set("yearId", params.yearId);
     return jsonFetch<OrderListResponse>(
       `/api/orders?${qs.toString()}`,
       { cache: "no-store" }
@@ -211,12 +225,15 @@ export const spjApi = {
     status?: "used" | "unused" | "all";
     page?: number;
     pageSize?: number;
+    yearId?: string;
   }): Promise<DocumentationListResponse> {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.status) qs.set("status", params.status);
     if (params.page) qs.set("page", String(params.page));
     if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+    if (params.yearId && params.yearId !== "all")
+      qs.set("yearId", params.yearId);
     return jsonFetch<DocumentationListResponse>(
       `/api/documentation?${qs.toString()}`,
       { cache: "no-store" }
@@ -225,12 +242,13 @@ export const spjApi = {
 
   async uploadDocumentation(
     files: File[],
-    opts?: { deviceType?: string; source?: string }
+    opts?: { deviceType?: string; source?: string; yearId?: string }
   ): Promise<UploadResult> {
     const fd = new FormData();
     for (const f of files) fd.append("files", f);
     if (opts?.deviceType) fd.append("deviceType", opts.deviceType);
     if (opts?.source) fd.append("source", opts.source);
+    if (opts?.yearId) fd.append("yearId", opts.yearId);
     return jsonFetch<UploadResult>(`/api/documentation`, {
       method: "POST",
       body: fd,

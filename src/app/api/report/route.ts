@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
     // Date range filter (for mode=all)
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
+    // Year filter (optional). "all" or empty => no filter
+    const yearIdRaw = searchParams.get("yearId")?.trim() || "";
+    const yearId = yearIdRaw && yearIdRaw !== "all" ? yearIdRaw : null;
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -48,6 +51,9 @@ export async function GET(req: NextRequest) {
       where.noPesanan = noPesanan;
     } else if (mode === "bku" && bku) {
       where.noBku = { contains: bku };
+    }
+    if (yearId) {
+      where.yearId = yearId;
     }
 
     // Date range filter: filter by tanggalPesanan (format DD/MM/YYYY in Excel)

@@ -20,6 +20,7 @@ import {
   Loader2,
   Check,
   Save,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -28,6 +29,7 @@ import {
   type AuthUser,
 } from "@/lib/auth-client";
 import { UserManagement } from "./user-management";
+import { YearManagement } from "./year-management";
 
 interface Props {
   currentUser: AuthUser;
@@ -121,6 +123,17 @@ export function SettingsTab({ currentUser, onLogout, onChanged }: Props) {
               <span className="sm:hidden">Identitas</span>
             </TabsTrigger>
           )}
+          {isAdmin && (
+            <TabsTrigger
+              value="years"
+              className="flex-1 sm:flex-none"
+              style={{ color: "oklch(0.50 0.16 70)" }}
+            >
+              <Calendar className="h-4 w-4" />
+              <span className="hidden sm:inline">Manajemen Tahun</span>
+              <span className="sm:hidden">Tahun</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Section A: Account */}
@@ -146,6 +159,13 @@ export function SettingsTab({ currentUser, onLogout, onChanged }: Props) {
         {isAdmin && (
           <TabsContent value="identity" className="mt-4">
             <IdentitySection onChanged={onChanged} />
+          </TabsContent>
+        )}
+
+        {/* Section E: Year management (admin only) */}
+        {isAdmin && (
+          <TabsContent value="years" className="mt-4">
+            <YearManagementSection onChanged={onChanged} />
           </TabsContent>
         )}
       </Tabs>
@@ -725,6 +745,32 @@ function IdentitySection({ onChanged }: { onChanged: () => void }) {
             </>
           )}
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ================================================================== */
+/* Section E: Year Management                                          */
+/* ================================================================== */
+
+function YearManagementSection({ onChanged }: { onChanged: () => void }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Calendar className="h-4 w-4" style={{ color: "oklch(0.50 0.16 70)" }} />
+          Manajemen Tahun
+        </CardTitle>
+        <CardDescription>
+          Kelola tahun anggaran untuk pengelompokan data SPJ. Tahun yang
+          diaktifkan akan muncul di dropdown pemilih tahun pada header
+          aplikasi. Pengguna dapat memilih tahun aktif untuk memfilter data
+          atau memilih &quot;Semua Tahun&quot; untuk melihat seluruh data.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <YearManagement onChanged={onChanged} />
       </CardContent>
     </Card>
   );

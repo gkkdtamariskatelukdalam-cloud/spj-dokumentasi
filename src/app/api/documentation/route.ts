@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { storeFile } from "@/lib/file-storage";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export const ACTIVE_YEAR_COOKIE = "spj_active_year";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 const ALLOWED_MIME = [
@@ -15,10 +18,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q")?.trim() || "";
     const status = searchParams.get("status") || "all";
+    const yearIdRaw = searchParams.get("yearId")?.trim() || "";
+    const yearId = yearIdRaw && yearIdRaw !== "all" ? yearIdRaw : null;
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") || "50", 10)));
 
     const allPhotos = await db.documentationPhoto.findMany({
+      where: yearId ? { yearId } : undefined,
       include: { links: { include: { order: { select: { noPesanan: true, noBku: true, uraianKegiatan: true } } } } },
       orderBy: { createdAt: "desc" },
     });
@@ -70,6 +76,22 @@ export async function POST(req: NextRequest) {
     const deviceType = (formData.get("deviceType") as string) || "upload";
     const source = (formData.get("source") as string) || "laptop";
 
+    // Determine target year: explicit FormData field, or active-year cookie
+    let yearId: string | null =
+      (formData.get("yearId") as string)?.trim() || null;
+    if (yearId === "all") yearId = null;
+    if (!yearId) {
+      try {
+        const cookieStore = await cookies();
+        const cookieVal = cookieStore.get(ACTIVE_YEAR_COOKIE)?.value;
+        if (cookieVal && cookieVal !== "all") {
+          yearId = cookieVal;
+        }
+      } catch {
+        // ignore cookie read errors
+      }
+    }
+
     if (files.length === 0) {
       return NextResponse.json({ error: "Tidak ada file" }, { status: 400 });
     }
@@ -101,6 +123,7 @@ export async function POST(req: NextRequest) {
             mimeType: stored.mimeType,
             deviceType,
             source,
+            yearId,
           },
         });
 

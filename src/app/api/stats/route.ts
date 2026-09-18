@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -6,14 +6,25 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/stats - dashboard summary statistics
+ * Query params:
+ *   yearId - if provided (and not "all"), filter all counts by yearId
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const yearIdRaw = searchParams.get("yearId")?.trim() || "";
+    const yearId = yearIdRaw && yearIdRaw !== "all" ? yearIdRaw : null;
+
+    const where = yearId ? { yearId } : {};
+
     const [totalOrders, totalItems, totalPhotos, orders] = await Promise.all([
-      db.spjOrder.count(),
-      db.spjItem.count(),
-      db.spjPhoto.count(),
+      db.spjOrder.count({ where }),
+      db.spjItem.count({ where: { order: { yearId: yearId ?? undefined } } }),
+      db.spjPhoto.count({
+        where: { order: { yearId: yearId ?? undefined } },
+      }),
       db.spjOrder.findMany({
+        where,
         select: {
           id: true,
           _count: { select: { photos: true } },

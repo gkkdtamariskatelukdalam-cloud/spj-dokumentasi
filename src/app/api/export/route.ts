@@ -25,9 +25,13 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const statusFilter = searchParams.get("status") || "all";
+    // Year filter (optional). "all" or empty => no filter (show all years)
+    const yearIdRaw = searchParams.get("yearId")?.trim() || "";
+    const yearId = yearIdRaw && yearIdRaw !== "all" ? yearIdRaw : null;
 
-    // Fetch all orders with counts
+    // Fetch all orders with counts (filtered by yearId if provided)
     const orders = await db.spjOrder.findMany({
+      where: yearId ? { yearId } : undefined,
       include: {
         items: { orderBy: { createdAt: "asc" } },
         photos: { select: { id: true } },

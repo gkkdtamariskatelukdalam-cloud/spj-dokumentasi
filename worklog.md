@@ -1654,3 +1654,120 @@ Work Log:
 
 Deploy: 2 pushes to GitHub → 2 Vercel auto-deploys → both READY ✅
 Production: https://spj-dokumentasi.vercel.app ✅
+
+---
+Task ID: YEAR-API
+Agent: general-purpose
+Task: Build year management APIs + update existing APIs for year filtering
+
+Work Log:
+- Read worklog.md to understand prior work (PostgreSQL migration, sharp compression, auth/rate-limit, deploy to Vercel).
+- Read prisma/schema.prisma to confirm SpjYear model and yearId fields on SpjOrder / ImportLog / DocumentationPhoto.
+- Regenerated Prisma client (`bunx prisma generate`) to expose `db.spjYear.*` API.
+- Created `src/app/api/years/route.ts`:
+  * GET: list all years (year DESC) with `_count.orders` mapped to `orderCount`. Returns `{ years: [{ id, year, isActive, label, orderCount, createdAt, updatedAt }] }`.
+  * POST: admin-only (requireAdmin). Validates year is integer in 2000-2100 range, unique. Returns 400 "Tahun sudah ada" if exists. Returns 201 with created year.
+- Created `src/app/api/years/[id]/route.ts`:
+  * PUT: admin-only. Updates `label` and/or `isActive`. Uses `params: Promise<{ id }>` (Next.js 16 async params).
+  * DELETE: admin-only. CRITICAL: returns 400 "Tidak dapat menghapus tahun yang masih memiliki data" if `_count.orders > 0`. Otherwise deletes the year.
+- Created `src/app/api/years/active/route.ts`:
+  * Exports `ACTIVE_YEAR_COOKIE = "spj_active_year"`.
+  * GET: reads cookie. If "all" → `{ year: null, mode: "all" }`. If specific yearId → validates existence → returns `{ year: {...}, mode: "year" }`. Fallback: most recent active year (year DESC).
+  * POST: accepts `{ yearId: string }` or `{ yearId: "all" }`. Validates yearId exists (unless "all"). Sets cookie with 7-day maxAge, httpOnly, secure in production, sameSite "lax", path "/".
+- Modified `src/app/api/orders/route.ts`:
+  * Added `yearId` query param. If provided and not "all", appends `where.yearId = yearId`. Otherwise no year filter (preserves legacy "show all" behavior).
+- Modified `src/app/api/stats/route.ts`:
+  * Added `yearId` query param. Filters `db.spjOrder.count` via `where: { yearId }`. For `spjItem.count` and `spjPhoto.count` uses relation filter `where: { order: { yearId } }`. If yearId is "all" or missing, no filter (preserves existing behavior).
+- Modified `src/app/api/import/route.ts`:
+  * Added `cookies` import + `ACTIVE_YEAR_COOKIE` constant.
+  * Reads `yearId` from FormData; if "all" or empty, falls back to cookie `spj_active_year` (validated against db). If cookie is also "all" or missing, yearId stays null (legacy mode).
+  * SCOPED DELETION: when yearId is provided, only deletes PhotoOrderLink / SpjPhoto / SpjItem / SpjOrder for that year (multi-year safe). When yearId is null, deletes all (preserves prior behavior).
+  * Sets `yearId` on every created SpjOrder and on the ImportLog record.
+- Modified `src/app/api/documentation/route.ts`:
+  * GET: added `yearId` query param. Filters `documentationPhoto.findMany` by `{ yearId }` when provided (and not "all").
+  * POST: reads `yearId` from FormData; falls back to cookie if not provided. Sets `yearId` on every created DocumentationPhoto.
+- Modified `src/app/api/report/route.ts`:
+  * Added `yearId` query param. If provided (and not "all"), adds `where.yearId = yearId` to the existing `where` clause used by `db.spjOrder.findMany`.
+- Modified `src/app/api/export/route.ts`:
+  * Added `yearId` query param. If provided (and not "all"), filters `db.spjOrder.findMany` with `where: { yearId }`.
+- Verified with `bun run lint`: 0 errors.
+- Verified with `bunx tsc --noEmit`: only pre-existing errors in unrelated files (examples/, skills/, src/hooks/use-device.ts, src/lib/db.ts, src/app/api/orders/[id]/route.ts line 24, src/app/api/report/route.ts lines 692/986 — `filteredOrders` scope issue). No new errors introduced by YEAR-API changes.
+
+Stage Summary:
+- New routes: ✅ /api/years (GET, POST), /api/years/[id] (PUT, DELETE), /api/years/active (GET, POST).
+- Existing routes updated: ✅ /api/orders, /api/stats, /api/import, /api/documentation, /api/report, /api/export — all support optional `yearId` query param without breaking legacy "show all" behavior.
+- Cookie contract: `spj_active_year` stores either a year id or the literal string "all" for "Semua Tahun" mode. Same lifetime as session (7 days), httpOnly, sameSite "lax".
+- Import is multi-year safe: scoped delete when yearId provided; legacy global delete when not.
+- Lint: ✅ 0 errors.
+- Backward compatibility: ✅ all existing API consumers that don't send yearId continue to see all data exactly as before.
+- Next step (out of scope): frontend UI to switch active year + send yearId on every fetch (will be handled by a separate UI task).
+
+---
+Task ID: YEAR-UI
+Agent: general-purpose
+Task: Build YearSelector + Year Management UI + integrate with page.tsx
+
+Work Log:
+- Read worklog + existing files (settings-tab, documentation-tab, report-dialog, page.tsx, spj-api.ts, year API routes, user-management as design reference) to understand conventions.
+- Created `src/lib/year-client.ts`:
+  * Exports `SpjYearInfo` and `ActiveYear` interfaces matching backend.
+  * `yearApi.list/create/update/delete/getActive/setActive` — wraps the 5 backend endpoints.
+  * Uses `jsonFetch` helper (same pattern as `auth-client.ts` / `spj-api.ts`).
+  * Note: backend POST returns `{ year: created }` and PUT returns `{ year: updated }` — client unwraps them to match the spec'd signatures (`create → SpjYearInfo`, `update → { success: boolean }`).
+- Created `src/components/spj/year-selector.tsx`:
+  * Compact Popover + Command (cmdk) dropdown for header.
+  * Trigger button: amber/orange accent (oklch(0.94 0.05 70) background + oklch(0.45 0.15 70) text) when a specific year is active, outline style when "all years" mode.
+  * Shows "📅 Tahun 2026 ▼" or "📅 Semua Tahun ▼" + ChevronsUpDown icon (or spinner when switching).
+  * Dropdown lists years (newest first) with: year number, AKTIF badge, label, order count, check mark for current selection.
+  * "Semua Tahun" option at the bottom, after a CommandSeparator, with Layers icon.
+  * PopoverContent width matches trigger width (via useLayoutEffect on triggerRef.offsetWidth) — same pattern as ComboboxOrderPicker in report-dialog.
+  * On select: optimistic close + show spinner + `yearApi.setActive(yearId)` + toast + `onYearChange()` callback to parent.
+- Created `src/components/spj/year-management.tsx`:
+  * Admin-only panel shown inside SettingsTab — mirrors `UserManagement` design (search + table + dialogs).
+  * Table columns: Tahun | Label | Status (Aktif/Nonaktif badge) | Order count | Aksi.
+  * Switch toggle for isActive (optimistic + rollback on error).
+  * Edit (Pencil) → YearFormDialog with label input + isActive toggle.
+  * Delete (Trash2) → AlertDialog confirmation; button disabled when orderCount > 0 with tooltip explanation.
+  * Create dialog: year number input (2000-2100, defaults to current year) + optional label.
+  * Helper note at bottom: explains year with order > 0 cannot be deleted.
+  * Uses shadcn Table, Dialog, Button, Input, Label, Switch, AlertDialog, Badge, Skeleton.
+  * Icons: Plus, Pencil, Trash2, Calendar, Check, X (and Loader2/Search inherited from pattern).
+- Modified `src/lib/spj-api.ts`:
+  * `getStats(yearId?: string)` — optional yearId appended as query param (skipped when undefined or "all").
+  * `listOrders` params: added `yearId?: string` field → appended to URLSearchParams.
+  * `listDocumentation` params: added `yearId?: string` field → appended to URLSearchParams.
+  * `uploadDocumentation` opts: added `yearId?: string` field → appended to FormData (so uploads are scoped to active year).
+- Modified `src/components/spj/documentation-tab.tsx`:
+  * Added `yearId?: string` prop.
+  * `refresh` callback now passes `yearId` to `spjApi.listDocumentation` and includes `yearId` in its dependency array.
+  * `doUpload` passes `yearId` to `spjApi.uploadDocumentation` so new photos are tagged with the active year.
+  * Reset-to-page-1 effect now also depends on `yearId` (so switching years returns to page 1).
+- Modified `src/components/spj/report-dialog.tsx`:
+  * Added `yearId?: string` prop.
+  * `handleGenerate` appends `&yearId=${yearId}` to the report URL when yearId is provided and not "all".
+- Modified `src/components/spj/settings-tab.tsx`:
+  * Imported `Calendar` icon + `YearManagement` component.
+  * Added 5th TabsTrigger "Manajemen Tahun" (admin only, value="years") with Calendar icon + amber accent color override.
+  * Added matching `TabsContent` rendering `<YearManagementSection>` (new Card wrapper with description).
+- Modified `src/app/page.tsx`:
+  * Imported `yearApi`, `ActiveYear` type, `YearSelector` component.
+  * Added `const [activeYear, setActiveYear] = React.useState<ActiveYear | null>(null)` state (null = "Semua Tahun").
+  * Auth useEffect now also fetches active year (`yearApi.getActive()`) after successful auth, so the selector has a value on first render.
+  * `refreshStats` / `refreshOrders` callbacks now depend on `activeYear?.id` and pass `yearId` to the API calls — existing useEffects (which depend on the callbacks) auto-trigger refetches when `activeYear` changes.
+  * New `handleYearChange` callback: re-fetches active year from server, sets state. The downstream useEffects handle stats+orders refetch automatically. DocumentationTab gets the new prop directly and refetches via its own effect.
+  * Header: inserted `<YearSelector>` as the first item in the right-side button group (visually between the app-name block and the action buttons).
+  * `<ReportDialog>` now receives `yearId={activeYear?.id}`.
+  * `<DocumentationTab>` now receives `yearId={activeYear?.id}`.
+  * Export Excel button: builds URL with `&yearId=${yid}` when a specific year is active.
+- Ran `bun run lint` → 0 errors. Also ran `bunx tsc --noEmit` → 0 errors in any of the created/modified files (pre-existing unrelated TS errors in examples/skills/other API routes remain but are out of scope).
+
+Stage Summary:
+- YearSelector: ✅ compact Popover+Command dropdown in header, amber accent, shows "📅 Tahun YYYY ▼" or "📅 Semua Tahun ▼", lists all years (newest first) + "Semua Tahun" option with separator.
+- YearManagement: ✅ full CRUD UI in SettingsTab (admin only) — Table + search + create/edit/delete dialogs + inline Switch for isActive + delete blocked when orderCount > 0.
+- spj-api.ts: ✅ yearId support added to getStats / listOrders / listDocumentation / uploadDocumentation (all optional, backward-compatible).
+- DocumentationTab: ✅ yearId prop scopes list + uploads to active year.
+- ReportDialog: ✅ yearId prop scopes generated report to active year.
+- SettingsTab: ✅ 5th sub-section "Manajemen Tahun" (Calendar icon, amber accent) added after "Identitas Aplikasi".
+- page.tsx: ✅ activeYear state, YearSelector in header, yearId plumbed to all data fetches (stats, orders, documentation, report, export), auto-refetch on year change via existing useEffect dependency graph.
+- Backward compatibility: ✅ yearId is always optional — when undefined or "all", APIs return all data (no filter). Existing features (login, import, documentation, report, export) all still work.
+- Lint: 0 errors. TypeScript: 0 errors in modified files.

@@ -22,28 +22,32 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const q = searchParams.get("q")?.trim() || "";
     const status = searchParams.get("status") || "all";
+    const yearId = searchParams.get("yearId")?.trim() || "";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const pageSize = Math.min(
       100,
       Math.max(1, parseInt(searchParams.get("pageSize") || "12", 10))
     );
 
-    const where = q
-      ? {
-          OR: [
-            { noPesanan: { contains: q } },
-            { noBku: { contains: q } },
-            { uraianKegiatan: { contains: q } },
-            { namaToko: { contains: q } },
-            { kategoriBelanja: { contains: q } },
-            {
-              items: {
-                some: { namaBarang: { contains: q } },
-              },
-            },
-          ],
-        }
-      : {};
+    // Build where clause — yearId filter only applies if provided and not "all"
+    const where: Record<string, unknown> = {};
+    if (q) {
+      where.OR = [
+        { noPesanan: { contains: q } },
+        { noBku: { contains: q } },
+        { uraianKegiatan: { contains: q } },
+        { namaToko: { contains: q } },
+        { kategoriBelanja: { contains: q } },
+        {
+          items: {
+            some: { namaBarang: { contains: q } },
+          },
+        },
+      ];
+    }
+    if (yearId && yearId !== "all") {
+      where.yearId = yearId;
+    }
 
     // Fetch ALL matching orders with just counts (no heavy item/photo data)
     const allOrders = await db.spjOrder.findMany({

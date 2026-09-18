@@ -63,6 +63,11 @@ interface Props {
   triggerLabel?: string;
   triggerSize?: "default" | "sm" | "lg" | "icon";
   triggerIcon?: "printer" | "stack";
+  /**
+   * Active year filter for the report. Pass a specific year id to scope the
+   * report to that year, or undefined/"all" to include all years.
+   */
+  yearId?: string;
 }
 
 export function ReportDialog({
@@ -71,6 +76,7 @@ export function ReportDialog({
   triggerLabel = "Cetak Laporan",
   triggerSize = "sm",
   triggerIcon = "printer",
+  yearId,
 }: Props) {
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<ReportMode>("all");
@@ -158,6 +164,8 @@ export function ReportDialog({
       params.set("includePhotos", includePhotos ? "1" : "0");
       params.set("includeItems", includeItems ? "1" : "0");
     }
+    // Scope report to active year (when in "specific year" mode)
+    if (yearId && yearId !== "all") params.set("yearId", yearId);
 
     const url = `/api/report?${params.toString()}`;
     setGenerating(true);

@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { cookies } from "next/headers";
+
+export const ACTIVE_YEAR_COOKIE = "spj_active_year";
 
 /**
  * Parse Excel SPJ file and import all rows to DB.
@@ -48,6 +51,27 @@ export async function POST(req: NextRequest) {
         { error: "File Excel wajib diunggah" },
         { status: 400 }
       );
+    }
+
+    // Determine target year: explicit FormData field, or active-year cookie
+    let yearId: string | null =
+      (formData.get("yearId") as string)?.trim() || null;
+    if (yearId === "all") yearId = null;
+    if (!yearId) {
+      try {
+        const cookieStore = await cookies();
+        const cookieVal = cookieStore.get(ACTIVE_YEAR_COOKIE)?.value;
+        if (cookieVal && cookieVal !== "all") {
+          // Validate cookie value is an existing year
+          const exists = await db.spjYear.findUnique({
+            where: { id: cookieVal },
+            select: { id: true },
+          });
+          if (exists) yearId = cookieVal;
+        }
+      } catch {
+        // ignore cookie read errors
+      }
     }
 
     const buf = await file.arrayBuffer();
@@ -146,10 +170,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Reset existing data (this is a re-import). Delete in proper order.
-    await db.spjPhoto.deleteMany();
-    await db.spjItem.deleteMany();
-    await db.spjOrder.deleteMany();
+    // Reset existing data for the target year.
+    // If yearId is provided (multi-year mode): only delete data for that year.
+    // If yearId is null (legacy mode): delete all data (preserves prior behavior).
+    if (yearId) {
+      await db.photoOrderLink.deleteMany({
+        where: { order: { yearId } },
+      });
+      await db.spjPhoto.deleteMany({
+        where: { order: { yearId } },
+      });
+      await db.spjItem.deleteMany({
+        where: { order: { yearId } },
+      });
+      await db.spjOrder.deleteMany({ where: { yearId } });
+    } else {
+      await db.spjPhoto.deleteMany();
+      await db.spjItem.deleteMany();
+      await db.spjOrder.deleteMany();
+    }
 
     let totalOrders = 0;
     let totalItems = 0;
@@ -172,6 +211,7 @@ export async function POST(req: NextRequest) {
             alamatToko: g.alamatToko,
             direkturToko: g.direkturToko,
             noHp: g.noHp,
+            yearId,
             items: {
               create: g.items,
             },
@@ -194,6 +234,7 @@ export async function POST(req: NextRequest) {
         totalItems,
         status: "success",
         message: `Imported ${totalOrders} orders, ${totalItems} items. Skipped ${skippedRows} empty rows.`,
+        yearId,
       },
     });
 

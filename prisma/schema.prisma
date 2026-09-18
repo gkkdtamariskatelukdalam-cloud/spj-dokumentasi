@@ -28,6 +28,9 @@ model SpjOrder {
   direkturToko    String?  // Kolom V
   noHp            String?  // Kolom AH
 
+  yearId     String?  // Relasi ke SpjYear (nullable untuk backward compat)
+  year       SpjYear? @relation(fields: [yearId], references: [id], onDelete: SetNull)
+
   items      SpjItem[]
   photos     SpjPhoto[]
   photoLinks PhotoOrderLink[]
@@ -37,6 +40,7 @@ model SpjOrder {
 
   @@index([noPesanan])
   @@index([noBku])
+  @@index([yearId])
 }
 
 // Detail barang per order (1 order bisa banyak barang)
@@ -86,7 +90,11 @@ model ImportLog {
   totalItems Int
   status     String   @default("success")
   message    String?
+  yearId     String?
+  year       SpjYear? @relation(fields: [yearId], references: [id], onDelete: SetNull)
   createdAt  DateTime @default(now())
+
+  @@index([yearId])
 }
 
 // ============================================================================
@@ -106,6 +114,7 @@ model DocumentationPhoto {
   deviceType  String   @default("upload") // "upload" | "camera"
   source      String   @default("laptop") // "laptop" | "android" | "ios"
   caption     String?  // optional caption/keterangan
+  yearId      String?  // Relasi ke SpjYear (nullable untuk backward compat)
 
   // Many-to-many: satu foto bisa di-link ke banyak pesanan
   links       PhotoOrderLink[]
@@ -113,6 +122,7 @@ model DocumentationPhoto {
   createdAt   DateTime @default(now())
 
   @@index([createdAt])
+  @@index([yearId])
 }
 
 // Junction table: many-to-many antara DocumentationPhoto dan SpjOrder
@@ -130,6 +140,25 @@ model PhotoOrderLink {
   @@unique([photoId, orderId]) // cegah duplikasi relasi
   @@index([photoId])
   @@index([orderId])
+}
+
+// ============================================================================
+// TAHUN/PERIODE — Sistem pengelompokan data per tahun
+// ============================================================================
+
+model SpjYear {
+  id        String   @id @default(cuid())
+  year      Int      @unique // e.g., 2024, 2025, 2026
+  isActive  Boolean  @default(true) // can be deactivated (not deleted)
+  label     String?  // optional custom label, e.g., "TA 2025/2026"
+
+  orders    SpjOrder[]
+  importLogs ImportLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([year])
 }
 
 // ============================================================================

@@ -50,6 +50,11 @@ type StatusFilter = "all" | "used" | "unused";
 interface Props {
   /** Optional callback to refresh parent stats/orders after upload/link/unlink/delete */
   onChanged?: () => void;
+  /**
+   * Optional active year filter. Pass the active year id (specific year) to
+   * scope list + uploads to that year. Pass undefined or "all" for all years.
+   */
+  yearId?: string;
 }
 
 /**
@@ -70,7 +75,7 @@ interface Props {
  * Clicking the card opens LinkToOrderDialog.
  * Delete uses AlertDialog confirmation.
  */
-export function DocumentationTab({ onChanged }: Props) {
+export function DocumentationTab({ onChanged, yearId }: Props) {
   const { device, isMobile, mounted } = useDevice();
 
   // file inputs (laptop drag&drop, mobile camera, mobile gallery)
@@ -111,6 +116,7 @@ export function DocumentationTab({ onChanged }: Props) {
         status: statusFilter,
         page,
         pageSize: PAGE_SIZE,
+        yearId,
       });
       setPhotos(res.photos);
       setTotal(res.total);
@@ -121,12 +127,12 @@ export function DocumentationTab({ onChanged }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQ, statusFilter, page]);
+  }, [debouncedQ, statusFilter, page, yearId]);
 
-  // reset to page 1 when filters change
+  // reset to page 1 when filters change (including yearId)
   React.useEffect(() => {
     setPage(1);
-  }, [debouncedQ, statusFilter]);
+  }, [debouncedQ, statusFilter, yearId]);
 
   React.useEffect(() => {
     void refresh();
@@ -147,6 +153,7 @@ export function DocumentationTab({ onChanged }: Props) {
       const result = await spjApi.uploadDocumentation(arr, {
         deviceType: opts?.deviceType ?? "upload",
         source: opts?.source ?? device,
+        yearId,
       });
       if (result.count > 0) {
         toast.success(`${result.count} foto berhasil diunggah`);

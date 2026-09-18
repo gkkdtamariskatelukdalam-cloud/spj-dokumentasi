@@ -21,7 +21,9 @@ import { ReportDialog } from "@/components/spj/report-dialog";
 import { DocumentationTab } from "@/components/spj/documentation-tab";
 import { LoginForm } from "@/components/spj/login-form";
 import { SettingsTab } from "@/components/spj/settings-tab";
+import { YearSelector } from "@/components/spj/year-selector";
 import { authApi, type AuthUser, type AppSettings } from "@/lib/auth-client";
+import { yearApi, type ActiveYear } from "@/lib/year-client";
 import {
   spjApi,
   type Stats,
@@ -53,6 +55,14 @@ export default function HomePage() {
         if (user) {
           const { settings } = await authApi.getSettings();
           setAppSettings(settings);
+          // Also load active year so the YearSelector has a value and all
+          // data fetches can be scoped correctly from the first render.
+          try {
+            const { year } = await yearApi.getActive();
+            setActiveYear(year);
+          } catch {
+            /* ignore — fall back to "all years" */
+          }
         }
       } catch {
         // ignore
@@ -93,6 +103,9 @@ export default function HomePage() {
   const [ordersLoading, setOrdersLoading] = React.useState(true);
   const [total, setTotal] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
+
+  // active year state — null means "Semua Tahun" (all years)
+  const [activeYear, setActiveYear] = React.useState<ActiveYear | null>(null);
 
   // filter state
   const [q, setQ] = React.useState("");
@@ -141,14 +154,14 @@ export default function HomePage() {
   const refreshStats = React.useCallback(async () => {
     setStatsLoading(true);
     try {
-      const s = await spjApi.getStats();
+      const s = await spjApi.getStats(activeYear?.id);
       setStats(s);
     } catch (e) {
       console.error(e);
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [activeYear?.id]);
 
   const refreshOrders = React.useCallback(async () => {
     setOrdersLoading(true);
@@ -158,6 +171,7 @@ export default function HomePage() {
         status: statusFilter,
         page,
         pageSize: PAGE_SIZE,
+        yearId: activeYear?.id,
       });
       // The API may return fewer items than expected when filtering by status.
       // We display whatever the API returns and let the user paginate normally.
@@ -169,7 +183,7 @@ export default function HomePage() {
     } finally {
       setOrdersLoading(false);
     }
-  }, [debouncedQ, statusFilter, page]);
+  }, [debouncedQ, statusFilter, page, activeYear?.id]);
 
   React.useEffect(() => {
     void refreshStats();
@@ -193,6 +207,21 @@ export default function HomePage() {
     void refreshStats();
     void refreshOrders();
   }, [refreshStats, refreshOrders]);
+
+  /**
+   * Called by YearSelector after the user picks a new active year. The server
+   * has already set the cookie; here we refresh local state and let the
+   * existing useEffects (which depend on activeYear?.id via refreshStats /
+   * refreshOrders) re-fetch stats + orders automatically.
+   */
+  const handleYearChange = React.useCallback(async () => {
+    try {
+      const { year } = await yearApi.getActive();
+      setActiveYear(year);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // ===== AUTH GATE: show login form if not authenticated =====
   if (authLoading) {
@@ -239,17 +268,29 @@ export default function HomePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <YearSelector
+              activeYear={activeYear}
+              onYearChange={handleYearChange}
+            />
             <ReportDialog
               triggerVariant="default"
               triggerLabel="Cetak Laporan"
               triggerSize="sm"
               triggerIcon="printer"
+              yearId={activeYear?.id}
             />
             <ImportDialog onImported={() => { void refreshStats(); void refreshOrders(); }} />
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { window.open("/api/export?status=all", "_blank"); }}
+              onClick={() => {
+                const yid = activeYear?.id;
+                const url =
+                  yid && yid !== "all"
+                    ? `/api/export?status=all&yearId=${encodeURIComponent(yid)}`
+                    : `/api/export?status=all`;
+                window.open(url, "_blank");
+              }}
             >
               <Download className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline">Export Excel</span>
@@ -388,6 +429,7 @@ export default function HomePage() {
               void refreshStats();
               void refreshOrders();
             }}
+            yearId={activeYear?.id}
           />
         ) : activeTab === "dashboard" ? (
           // ===== DASHBOARD TAB: hanya statistik + progress, tanpa tabel =====
