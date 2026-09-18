@@ -1615,3 +1615,42 @@ Stage Summary:
 - .gitignore: proper (no secrets/uploads in git)
 - seed-production.ts: ready untuk setup Neon
 - DEPLOY.md: panduan lengkap
+
+---
+Task ID: CRITICAL-FIXES
+Agent: Main (Z.ai Code)
+Task: Fix 4 masalah paling penting sekaligus
+
+Work Log:
+1. Image compression (file-storage.ts):
+   - Pakai sharp untuk resize max 1280px + JPEG quality 80%
+   - PNG dengan alpha: preserve lossless
+   - SVG/ICO: store as-is (vector)
+   - Fallback raw jika sharp fail
+   - Test: 47KB image → 4KB stored (92% reduction)
+   - Limit upload: 4MB (Vercel payload limit)
+
+2. Error Boundary (error-boundary.tsx):
+   - Catch React runtime errors → prevent blank screen
+   - Friendly UI: "Terjadi Kesalahan" + "Coba Lagi" + "Muat Ulang"
+   - Show error details in <details>
+   - Wrapped di layout.tsx (global)
+
+3. Rate limiting login (auth/login/route.ts):
+   - In-memory rate limit: 5 attempts/60s per IP
+   - Return 429 + Retry-After header
+   - Clear attempts on successful login
+   - Note: limited in Vercel serverless (per-instance), but still provides basic protection
+
+4. Prisma log level (db.ts):
+   - Production: ['error'] only (no query log)
+   - Development: ['query', 'error'] (full debug)
+   - Prevents Vercel log bloat
+
+5. File size limit:
+   - Changed from 15MB → 4MB (match Vercel payload limit)
+   - Updated in: documentation, order photos, settings logo
+   - Updated UI hint in photo-upload.tsx
+
+Deploy: 2 pushes to GitHub → 2 Vercel auto-deploys → both READY ✅
+Production: https://spj-dokumentasi.vercel.app ✅
