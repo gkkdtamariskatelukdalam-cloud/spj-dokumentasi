@@ -1,0 +1,175 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Master order (1 No Pesanan = 1 SpjOrder, bisa punya banyak barang & foto)
+model SpjOrder {
+  id              String   @id @default(cuid())
+  noPesanan       String   // Kolom A - No. Surat Pesan
+  noBku           String   // Kolom B - No BKU
+  kodeProgram     String?  // Kolom C
+  kodeRekening    String?  // Kolom D
+  tanggalPesanan  String?  // Kolom F
+  tanggalBast     String?  // Kolom G
+  tanggalBayar    String?  // Kolom I
+  uraianKegiatan  String?  // Kolom J
+  kategoriBelanja String?  // Kolom P
+  namaToko        String?  // Kolom T
+  alamatToko      String?  // Kolom W
+  direkturToko    String?  // Kolom V
+  noHp            String?  // Kolom AH
+
+  items      SpjItem[]
+  photos     SpjPhoto[]
+  photoLinks PhotoOrderLink[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([noPesanan])
+  @@index([noBku])
+}
+
+// Detail barang per order (1 order bisa banyak barang)
+model SpjItem {
+  id           String  @id @default(cuid())
+  orderId      String
+  order        SpjOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  namaBarang   String  // Kolom K
+  volume       String? // Kolom L
+  satuan       String? // Kolom M
+  hargaSatuan String? // Kolom N
+  jumlah       String? // Kolom O
+  spesifikasi  String? // Kolom Q
+  kategori     String? // Kolom P
+  uraian       String? // Kolom J
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// Foto dokumentasi per order
+model SpjPhoto {
+  id          String  @id @default(cuid())
+  orderId     String
+  order       SpjOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fileName    String  // original filename
+  filePath    String  // relative path in /public/uploads
+  url         String  // full URL
+  fileSize    Int     @default(0) // bytes
+  mimeType    String  @default("image/jpeg")
+  deviceType  String  @default("upload") // "upload" | "camera"
+  source      String  @default("laptop") // "laptop" | "android" | "ios"
+  caption     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// Audit log import Excel
+model ImportLog {
+  id         String   @id @default(cuid())
+  fileName   String
+  totalRows  Int
+  totalOrders Int
+  totalItems Int
+  status     String   @default("success")
+  message    String?
+  createdAt  DateTime @default(now())
+}
+
+// ============================================================================
+// DOKUMENTASI FOTO — Perpustakaan foto utama (many-to-many dengan pesanan)
+// ============================================================================
+
+// Foto dokumentasi (perpustakaan/galeri utama)
+// Foto disimpan di sini tanpa harus terkait pesanan tertentu.
+// Hubungan dengan pesanan disimpan di PhotoOrderLink (many-to-many).
+model DocumentationPhoto {
+  id          String   @id @default(cuid())
+  fileName    String   // original filename
+  filePath    String   // relative path in /public/uploads/doc
+  url         String   // full URL path
+  fileSize    Int      @default(0) // bytes
+  mimeType    String   @default("image/jpeg")
+  deviceType  String   @default("upload") // "upload" | "camera"
+  source      String   @default("laptop") // "laptop" | "android" | "ios"
+  caption     String?  // optional caption/keterangan
+
+  // Many-to-many: satu foto bisa di-link ke banyak pesanan
+  links       PhotoOrderLink[]
+
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Junction table: many-to-many antara DocumentationPhoto dan SpjOrder
+// 1 foto → banyak pesanan, 1 pesanan → banyak foto
+model PhotoOrderLink {
+  id        String   @id @default(cuid())
+  photoId   String
+  orderId   String
+
+  photo     DocumentationPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  order     SpjOrder           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([photoId, orderId]) // cegah duplikasi relasi
+  @@index([photoId])
+  @@index([orderId])
+}
+
+// ============================================================================
+// AUTHENTICATION & SETTINGS
+// ============================================================================
+
+// User account for authentication
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  password     String   // hashed with bcrypt
+  role         String   @default("user") // "admin" | "user"
+  isActive     Boolean  @default(true)
+  displayName  String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([username])
+}
+
+// App settings (key-value store for app identity, logo, etc.)
+model AppSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String?
+
+  updatedAt DateTime @updatedAt
+}
+
+// Stored file in database (for Vercel serverless — filesystem is read-only)
+// Used for: logo, documentation photos, order photos
+model StoredFile {
+  id        String   @id @default(cuid())
+  data      String   // base64 encoded file data
+  mimeType  String   @default("image/jpeg")
+  fileSize  Int      @default(0)
+  fileName  String
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
