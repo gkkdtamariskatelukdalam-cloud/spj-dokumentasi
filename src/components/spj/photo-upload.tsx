@@ -32,16 +32,45 @@ export function PhotoUpload({ orderId, onUploaded, photoCount = 0 }: Props) {
     const arr = Array.from(files);
     if (arr.length === 0) return;
     setUploading(true);
+
+    // Chunked upload: 5 photos per batch to stay under Vercel 4.5MB payload limit
+    // For 100+ photos: sequential batches, no payload issue
+    const BATCH_SIZE = 5;
+    let totalUploaded = 0;
+    let totalErrors: string[] = [];
+
     try {
-      const result = await spjApi.uploadPhotos(orderId, arr, {
-        deviceType: opts?.deviceType ?? "upload",
-        source: opts?.source ?? device,
-      });
-      if (result.count > 0) {
-        toast.success(`${result.count} foto berhasil diunggah`);
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+        try {
+          const result = await spjApi.uploadPhotos(orderId, batch, {
+            deviceType: opts?.deviceType ?? "upload",
+            source: opts?.source ?? device,
+          });
+          totalUploaded += result.count;
+          totalErrors = totalErrors.concat(result.errors);
+        } catch (batchErr) {
+          // If batch fails, try 1-by-1
+          for (const f of batch) {
+            try {
+              const result = await spjApi.uploadPhotos(orderId, [f], {
+                deviceType: opts?.deviceType ?? "upload",
+                source: opts?.source ?? device,
+              });
+              totalUploaded += result.count;
+              totalErrors = totalErrors.concat(result.errors);
+            } catch (singleErr) {
+              totalErrors.push(`${f.name}: ${singleErr instanceof Error ? singleErr.message : "gagal"}`);
+            }
+          }
+        }
       }
-      if (result.errors.length > 0) {
-        toast.error(`${result.errors.length} file gagal: ${result.errors[0]}`);
+
+      if (totalUploaded > 0) {
+        toast.success(`${totalUploaded} foto berhasil diunggah`);
+      }
+      if (totalErrors.length > 0) {
+        toast.error(`${totalErrors.length} file gagal: ${totalErrors[0]}`);
       }
       onUploaded();
     } catch (err) {

@@ -96,6 +96,7 @@ export function DocumentationTab({ onChanged, yearId }: Props) {
 
   // upload state
   const [uploading, setUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<{ current: number; total: number } | null>(null);
   const [dragging, setDragging] = React.useState(false);
 
   // dialog state
@@ -149,19 +150,56 @@ export function DocumentationTab({ onChanged, yearId }: Props) {
     const arr = Array.from(files);
     if (arr.length === 0) return;
     setUploading(true);
+    setUploadProgress({ current: 0, total: arr.length });
+
+    // Chunked upload: Vercel payload limit is 4.5MB total.
+    // Upload 5 photos per batch to stay under the limit.
+    // Each photo max 4MB → 5 photos = max 20MB... but compressed photos are ~200KB
+    // so 5 photos = ~1MB per batch — well within Vercel's 4.5MB limit.
+    // For 100+ photos: 20 batches × ~1MB each = sequential upload, no payload issue.
+    const BATCH_SIZE = 5;
+    let totalUploaded = 0;
+    let totalErrors: string[] = [];
+
     try {
-      const result = await spjApi.uploadDocumentation(arr, {
-        deviceType: opts?.deviceType ?? "upload",
-        source: opts?.source ?? device,
-        yearId,
-      });
-      if (result.count > 0) {
-        toast.success(`${result.count} foto berhasil diunggah`);
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+        setUploadProgress({ current: i, total: arr.length });
+
+        try {
+          const result = await spjApi.uploadDocumentation(batch, {
+            deviceType: opts?.deviceType ?? "upload",
+            source: opts?.source ?? device,
+            yearId,
+          });
+          totalUploaded += result.count;
+          totalErrors = totalErrors.concat(result.errors);
+        } catch (batchErr) {
+          // If batch fails (e.g., payload too large), try 1-by-1
+          for (const f of batch) {
+            try {
+              const result = await spjApi.uploadDocumentation([f], {
+                deviceType: opts?.deviceType ?? "upload",
+                source: opts?.source ?? device,
+                yearId,
+              });
+              totalUploaded += result.count;
+              totalErrors = totalErrors.concat(result.errors);
+            } catch (singleErr) {
+              totalErrors.push(`${f.name}: ${singleErr instanceof Error ? singleErr.message : "gagal"}`);
+            }
+          }
+        }
       }
-      if (result.errors.length > 0) {
-        toast.error(`${result.errors.length} file gagal: ${result.errors[0]}`);
+
+      setUploadProgress({ current: arr.length, total: arr.length });
+
+      if (totalUploaded > 0) {
+        toast.success(`${totalUploaded} foto berhasil diunggah`);
       }
-      // jump to page 1 so the newly uploaded photos are visible
+      if (totalErrors.length > 0) {
+        toast.error(`${totalErrors.length} file gagal: ${totalErrors[0]}`);
+      }
       setPage(1);
       void refresh();
       notifyParent();
@@ -170,6 +208,7 @@ export function DocumentationTab({ onChanged, yearId }: Props) {
       toast.error(msg);
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -343,13 +382,27 @@ export function DocumentationTab({ onChanged, yearId }: Props) {
               <div>
                 <p className="text-sm font-medium">
                   {uploading
-                    ? "Sedang mengunggah..."
+                    ? uploadProgress
+                      ? `Mengunggah ${uploadProgress.current}/${uploadProgress.total} foto...`
+                      : "Sedang mengunggah..."
                     : "Klik atau drag & drop foto dokumentasi"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  JPG, PNG, WebP, HEIC — maks 15 MB per file — bisa banyak file
-                  sekaligus
+                  JPG, PNG, WebP, HEIC — maks 4 MB per file — bisa banyak file
+                  sekaligus (100+ foto OK)
                 </p>
+                {uploading && uploadProgress && (
+                  <div className="mt-2 w-full max-w-xs">
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{
+                          width: `${uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-center">
