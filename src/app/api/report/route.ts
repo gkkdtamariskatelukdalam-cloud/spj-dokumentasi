@@ -696,7 +696,7 @@ function renderReport(ctx: ReportContext): string {
   </div>
 
   ${
-    filteredOrders.length > 1
+    orders.length > 1
       ? renderTOC(orders)
       : ""
   }
@@ -1016,7 +1016,7 @@ interface LampiranContext {
 function renderLampiran(ctx: LampiranContext): string {
   const { mode, bku, orders, baseUrl } = ctx;
 
-  const totalPages = filteredOrders.length;
+  const totalPages = orders.length;
   const sections = orders
     .map((o, idx) => renderLampiranOrderSection(o, idx + 1, totalPages, baseUrl))
     .join("\n");
