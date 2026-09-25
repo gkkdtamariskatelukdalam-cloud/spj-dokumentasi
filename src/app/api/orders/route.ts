@@ -61,22 +61,27 @@ export async function GET(req: NextRequest) {
         namaToko: true,
         tanggalPesanan: true,
         tanggalBayar: true,
-        _count: { select: { photos: true, items: true } },
+        _count: { select: { photos: true, items: true, photoLinks: true } },
       },
     });
 
     // Compute status for each order and filter BEFORE pagination
-    const withStatus = allOrders.map((o) => ({
-      ...o,
-      photoCount: o._count.photos,
-      itemCount: o._count.items,
-      status:
-        o._count.photos >= 2
-          ? ("complete" as const)
-          : o._count.photos > 0
-          ? ("incomplete" as const)
-          : ("empty" as const),
-    }));
+    // photoCount = SpjPhoto count + PhotoOrderLink count (many-to-many)
+    // This matches what the detail API returns (merged photos from both sources)
+    const withStatus = allOrders.map((o) => {
+      const photoCount = o._count.photos + o._count.photoLinks;
+      return {
+        ...o,
+        photoCount,
+        itemCount: o._count.items,
+        status:
+          photoCount >= 2
+            ? ("complete" as const)
+            : photoCount > 0
+            ? ("incomplete" as const)
+            : ("empty" as const),
+      };
+    });
 
     let filtered = withStatus;
     if (status === "complete") {
