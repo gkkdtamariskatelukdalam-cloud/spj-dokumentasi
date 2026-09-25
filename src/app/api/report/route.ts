@@ -56,6 +56,12 @@ export async function GET(req: NextRequest) {
       where.yearId = yearId;
     }
 
+    // Clean up orphaned PhotoOrderLink records (photo deleted but link remains)
+    // This prevents "Inconsistent query result" Prisma errors
+    await db.photoOrderLink.deleteMany({
+      where: { photo: { is: null } },
+    }).catch(() => {});
+
     // Date range filter: filter by tanggalPesanan (format DD/MM/YYYY in Excel)
     // We filter in-memory after fetch since tanggalPesanan is stored as String (not Date)
     // This is handled after fetch below
@@ -260,8 +266,9 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("GET /api/report error:", err);
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(
-      { error: "Gagal membuat laporan" },
+      { error: "Gagal membuat laporan: " + errorMsg },
       { status: 500 }
     );
   }
