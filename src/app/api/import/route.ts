@@ -170,61 +170,118 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Reset existing data for the target year.
-    // If yearId is provided (multi-year mode): only delete data for that year.
-    // If yearId is null (legacy mode): delete all data (preserves prior behavior).
-    if (yearId) {
-      await db.photoOrderLink.deleteMany({
-        where: { order: { yearId } },
-      });
-      await db.spjPhoto.deleteMany({
-        where: { order: { yearId } },
-      });
-      await db.spjItem.deleteMany({
-        where: { order: { yearId } },
-      });
-      await db.spjOrder.deleteMany({ where: { yearId } });
-    } else {
-      await db.spjPhoto.deleteMany();
-      await db.spjItem.deleteMany();
-      await db.spjOrder.deleteMany();
+    // ===== DEDUPLICATION IMPORT =====
+    // Cek apakah data (No Pesanan + BKU) sudah ada di database untuk tahun aktif.
+    // Jika sudah ada → skip (tidak import duplikat).
+    // Jika belum ada → import data baru.
+    // Data lama TIDAK dihapus — hanya skip duplikat.
+
+    // Ambil semua No Pesanan + BKU yang sudah ada di database untuk tahun ini
+    const existingOrders = await db.spjOrder.findMany({
+      where: yearId ? { yearId } : {},
+      select: { id: true, noPesanan: true, noBku: true },
+    });
+
+    // Buat set of "noPesanan|noBku" untuk cek duplikat cepat
+    const existingKeys = new Set(
+      existingOrders.map((o) => `${o.noPesanan}|${o.noBku}`)
+    );
+
+    // Ambil semua nama barang yang sudah ada untuk orders yang existing
+    // (untuk cek duplikat item level)
+    const existingOrderIds = existingOrders.map((o) => o.id);
+    const existingItems = await db.spjItem.findMany({
+      where: { orderId: { in: existingOrderIds } },
+      select: { orderId: true, namaBarang: true },
+    });
+
+    // Map: orderId → Set of namaBarang (untuk cek duplikat item)
+    const existingItemsMap = new Map<string, Set<string>>();
+    for (const it of existingItems) {
+      if (!existingItemsMap.has(it.orderId)) {
+        existingItemsMap.set(it.orderId, new Set());
+      }
+      existingItemsMap.get(it.orderId)!.add(it.namaBarang.toLowerCase());
+    }
+
+    // Map noPesanan|noBku → orderId (untuk lookup saat insert item)
+    const existingOrderMap = new Map<string, string>();
+    for (const o of existingOrders) {
+      existingOrderMap.set(`${o.noPesanan}|${o.noBku}`, o.id);
     }
 
     let totalOrders = 0;
     let totalItems = 0;
+    let skippedDuplicates = 0;
+    let skippedItemDuplicates = 0;
+    const newOrders: OrderGroup[] = [];
 
-    // Use a transaction for speed
-    await db.$transaction(
-      Array.from(groups.values()).map((g) =>
-        db.spjOrder.create({
-          data: {
-            noPesanan: g.noPesanan,
-            noBku: g.noBku,
-            kodeProgram: g.kodeProgram,
-            kodeRekening: g.kodeRekening,
-            tanggalPesanan: g.tanggalPesanan,
-            tanggalBast: g.tanggalBast,
-            tanggalBayar: g.tanggalBayar,
-            uraianKegiatan: g.uraianKegiatan,
-            kategoriBelanja: g.kategoriBelanja,
-            namaToko: g.namaToko,
-            alamatToko: g.alamatToko,
-            direkturToko: g.direkturToko,
-            noHp: g.noHp,
-            yearId,
-            items: {
-              create: g.items,
+    // Pisahkan: orders baru vs orders yang sudah ada
+    for (const g of groups.values()) {
+      const key = `${g.noPesanan}|${g.noBku}`;
+      if (existingKeys.has(key)) {
+        // Order sudah ada — cek item-level: hanya insert item yang belum ada
+        const existingOrderId = existingOrderMap.get(key)!;
+        const existingItemNames = existingItemsMap.get(existingOrderId) || new Set<string>();
+
+        const newItems: typeof g.items = [];
+        for (const item of g.items) {
+          if (existingItemNames.has(item.namaBarang.toLowerCase())) {
+            skippedItemDuplicates++; // item sudah ada, skip
+          } else {
+            newItems.push(item);
+            existingItemNames.add(item.namaBarang.toLowerCase()); // prevent in-batch dup
+          }
+        }
+
+        if (newItems.length > 0) {
+          // Insert hanya item baru ke order yang sudah ada
+          await db.spjItem.createMany({
+            data: newItems.map((it) => ({
+              ...it,
+              orderId: existingOrderId,
+            })),
+          });
+          totalItems += newItems.length;
+        }
+        skippedDuplicates++; // order sudah ada (tapi mungkin ada item baru)
+      } else {
+        // Order baru — insert order + semua items
+        newOrders.push(g);
+        existingKeys.add(key); // prevent in-batch dup
+      }
+    }
+
+    // Insert orders baru dalam transaction
+    if (newOrders.length > 0) {
+      await db.$transaction(
+        newOrders.map((g) =>
+          db.spjOrder.create({
+            data: {
+              noPesanan: g.noPesanan,
+              noBku: g.noBku,
+              kodeProgram: g.kodeProgram,
+              kodeRekening: g.kodeRekening,
+              tanggalPesanan: g.tanggalPesanan,
+              tanggalBast: g.tanggalBast,
+              tanggalBayar: g.tanggalBayar,
+              uraianKegiatan: g.uraianKegiatan,
+              kategoriBelanja: g.kategoriBelanja,
+              namaToko: g.namaToko,
+              alamatToko: g.alamatToko,
+              direkturToko: g.direkturToko,
+              noHp: g.noHp,
+              yearId,
+              items: {
+                create: g.items,
+              },
             },
-          },
-        })
-      )
-    );
-
-    totalOrders = groups.size;
-    totalItems = Array.from(groups.values()).reduce(
-      (acc, g) => acc + g.items.length,
-      0
-    );
+          })
+        )
+      );
+      totalOrders = newOrders.length;
+      totalItems += newOrders.reduce((acc, g) => acc + g.items.length, 0);
+    }
 
     await db.importLog.create({
       data: {
@@ -233,7 +290,7 @@ export async function POST(req: NextRequest) {
         totalOrders,
         totalItems,
         status: "success",
-        message: `Imported ${totalOrders} orders, ${totalItems} items. Skipped ${skippedRows} empty rows.`,
+        message: `Imported ${totalOrders} new orders, ${totalItems} items. Skipped ${skippedDuplicates} existing orders, ${skippedItemDuplicates} duplicate items.`,
         yearId,
       },
     });
@@ -243,7 +300,9 @@ export async function POST(req: NextRequest) {
       totalOrders,
       totalItems,
       skippedRows,
-      message: `Berhasil import ${totalOrders} No Pesanan dengan ${totalItems} item barang`,
+      skippedDuplicates,
+      skippedItemDuplicates,
+      message: `Import selesai: ${totalOrders} order baru, ${totalItems} item baru. ${skippedDuplicates} order sudah ada (di-skip). ${skippedItemDuplicates} item duplikat di-skip.`,
     });
   } catch (err) {
     console.error("Import error:", err);
