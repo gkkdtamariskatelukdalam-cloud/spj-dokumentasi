@@ -217,6 +217,19 @@ export async function POST(req: NextRequest) {
     const newOrders: OrderGroup[] = [];
 
     // Pisahkan: orders baru vs orders yang sudah ada
+    // Kumpulkan semua item baru untuk existing orders dalam 1 array (batch insert)
+    const allNewItemsForExistingOrders: Array<{
+      namaBarang: string;
+      volume: string | null;
+      satuan: string | null;
+      hargaSatuan: string | null;
+      jumlah: string | null;
+      spesifikasi: string | null;
+      kategori: string | null;
+      uraian: string | null;
+      orderId: string;
+    }> = [];
+
     for (const g of groups.values()) {
       const key = `${g.noPesanan}|${g.noBku}`;
       if (existingKeys.has(key)) {
@@ -224,27 +237,15 @@ export async function POST(req: NextRequest) {
         const existingOrderId = existingOrderMap.get(key)!;
         const existingItemNames = existingItemsMap.get(existingOrderId) || new Set<string>();
 
-        const newItems: typeof g.items = [];
         for (const item of g.items) {
           if (existingItemNames.has(item.namaBarang.toLowerCase())) {
             skippedItemDuplicates++; // item sudah ada, skip
           } else {
-            newItems.push(item);
+            allNewItemsForExistingOrders.push({ ...item, orderId: existingOrderId });
             existingItemNames.add(item.namaBarang.toLowerCase()); // prevent in-batch dup
           }
         }
-
-        if (newItems.length > 0) {
-          // Insert hanya item baru ke order yang sudah ada
-          await db.spjItem.createMany({
-            data: newItems.map((it) => ({
-              ...it,
-              orderId: existingOrderId,
-            })),
-          });
-          totalItems += newItems.length;
-        }
-        skippedDuplicates++; // order sudah ada (tapi mungkin ada item baru)
+        skippedDuplicates++; // order sudah ada
       } else {
         // Order baru — insert order + semua items
         newOrders.push(g);
@@ -252,35 +253,63 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Insert orders baru dalam transaction
+    // Batch insert semua item baru untuk existing orders (1 query, bukan 208)
+    if (allNewItemsForExistingOrders.length > 0) {
+      await db.spjItem.createMany({
+        data: allNewItemsForExistingOrders,
+      });
+      totalItems = allNewItemsForExistingOrders.length;
+    }
+
+    // Insert orders baru — gunakan createMany (1 query) + batch items (1 query)
     if (newOrders.length > 0) {
-      await db.$transaction(
-        newOrders.map((g) =>
-          db.spjOrder.create({
-            data: {
-              noPesanan: g.noPesanan,
-              noBku: g.noBku,
-              kodeProgram: g.kodeProgram,
-              kodeRekening: g.kodeRekening,
-              tanggalPesanan: g.tanggalPesanan,
-              tanggalBast: g.tanggalBast,
-              tanggalBayar: g.tanggalBayar,
-              uraianKegiatan: g.uraianKegiatan,
-              kategoriBelanja: g.kategoriBelanja,
-              namaToko: g.namaToko,
-              alamatToko: g.alamatToko,
-              direkturToko: g.direkturToko,
-              noHp: g.noHp,
-              yearId,
-              items: {
-                create: g.items,
-              },
-            },
-          })
-        )
-      );
+      // Step 1: Create all orders with createMany (1 query instead of 208)
+      // Generate IDs manually so we can link items
+      const { randomUUID } = await import("node:crypto");
+      const ordersToCreate = newOrders.map((g) => ({
+        id: randomUUID(),
+        noPesanan: g.noPesanan,
+        noBku: g.noBku,
+        kodeProgram: g.kodeProgram,
+        kodeRekening: g.kodeRekening,
+        tanggalPesanan: g.tanggalPesanan,
+        tanggalBast: g.tanggalBast,
+        tanggalBayar: g.tanggalBayar,
+        uraianKegiatan: g.uraianKegiatan,
+        kategoriBelanja: g.kategoriBelanja,
+        namaToko: g.namaToko,
+        alamatToko: g.alamatToko,
+        direkturToko: g.direkturToko,
+        noHp: g.noHp,
+        yearId,
+      }));
+      await db.spjOrder.createMany({ data: ordersToCreate });
+
+      // Step 2: Create all items with createMany (1 query instead of 780)
+      const allItems: Array<{
+        namaBarang: string;
+        volume: string | null;
+        satuan: string | null;
+        hargaSatuan: string | null;
+        jumlah: string | null;
+        spesifikasi: string | null;
+        kategori: string | null;
+        uraian: string | null;
+        orderId: string;
+      }> = [];
+      for (let i = 0; i < newOrders.length; i++) {
+        const g = newOrders[i];
+        const orderId = ordersToCreate[i].id;
+        for (const item of g.items) {
+          allItems.push({ ...item, orderId });
+        }
+      }
+      if (allItems.length > 0) {
+        await db.spjItem.createMany({ data: allItems });
+      }
+
       totalOrders = newOrders.length;
-      totalItems += newOrders.reduce((acc, g) => acc + g.items.length, 0);
+      totalItems += allItems.length;
     }
 
     await db.importLog.create({
