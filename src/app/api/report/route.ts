@@ -921,8 +921,34 @@ async function getImageOrientation(
   filePath: string
 ): Promise<ImageOrientation> {
   try {
-    const absPath = join(process.cwd(), "public", filePath);
-    const meta = await sharp(absPath).metadata();
+    let buffer: Buffer | null = null;
+
+    // Check if filePath is a database-stored file URL: /api/file/{id}
+    if (filePath.startsWith("/api/file/")) {
+      // Extract file ID from URL
+      const fileId = filePath.replace("/api/file/", "").split("?")[0];
+      // Fetch from database
+      const storedFile = await db.storedFile.findUnique({
+        where: { id: fileId },
+        select: { data: true },
+      });
+      if (storedFile) {
+        buffer = Buffer.from(storedFile.data, "base64");
+      }
+    } else {
+      // Legacy: file stored on filesystem (local dev)
+      const absPath = join(process.cwd(), "public", filePath);
+      try {
+        const { readFile } = await import("node:fs/promises");
+        buffer = await readFile(absPath);
+      } catch {
+        return "unknown"; // file not found on filesystem
+      }
+    }
+
+    if (!buffer) return "unknown";
+
+    const meta = await sharp(buffer).metadata();
     const w = meta.width ?? 0;
     const h = meta.height ?? 0;
     if (w === 0 || h === 0) return "unknown";
