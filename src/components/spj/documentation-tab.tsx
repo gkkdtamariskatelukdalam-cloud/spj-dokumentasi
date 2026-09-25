@@ -149,6 +149,13 @@ export function DocumentationTab({ onChanged, yearId }: Props) {
   ) {
     const arr = Array.from(files);
     if (arr.length === 0) return;
+
+    // Require active year before upload
+    if (!yearId) {
+      toast.error("Pilih tahun aktif terlebih dahulu sebelum upload foto");
+      return;
+    }
+
     setUploading(true);
     setUploadProgress({ current: 0, total: arr.length });
 

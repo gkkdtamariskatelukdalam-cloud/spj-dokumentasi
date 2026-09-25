@@ -10,6 +10,18 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import {
   Settings as SettingsIcon,
   Users as UsersIcon,
   Image as ImageIcon,
@@ -21,6 +33,8 @@ import {
   Check,
   Save,
   Calendar,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -134,8 +148,18 @@ export function SettingsTab({ currentUser, onLogout, onChanged }: Props) {
               <span className="sm:hidden">Tahun</span>
             </TabsTrigger>
           )}
+          {isAdmin && (
+            <TabsTrigger
+              value="data"
+              className="flex-1 sm:flex-none"
+              style={{ color: "oklch(0.52 0.20 27)" }}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Reset Data</span>
+              <span className="sm:hidden">Reset</span>
+            </TabsTrigger>
+          )}
         </TabsList>
-
         {/* Section A: Account */}
         <TabsContent value="account" className="mt-4">
           <AccountSection currentUser={currentUser} onChanged={onChanged} />
@@ -166,6 +190,13 @@ export function SettingsTab({ currentUser, onLogout, onChanged }: Props) {
         {isAdmin && (
           <TabsContent value="years" className="mt-4">
             <YearManagementSection onChanged={onChanged} />
+          </TabsContent>
+        )}
+
+        {/* Section F: Reset Data (admin only) */}
+        {isAdmin && (
+          <TabsContent value="data" className="mt-4">
+            <ResetDataSection onChanged={onChanged} />
           </TabsContent>
         )}
       </Tabs>
@@ -773,5 +804,229 @@ function YearManagementSection({ onChanged }: { onChanged: () => void }) {
         <YearManagement onChanged={onChanged} />
       </CardContent>
     </Card>
+  );
+}
+
+/* ================================================================== */
+/* Section F: Reset Data — hapus semua foto / hapus semua data belanja */
+/* ================================================================== */
+
+function ResetDataSection({ onChanged }: { onChanged: () => void }) {
+  const [activeYearId, setActiveYearId] = React.useState<string>("");
+  const [activeYearLabel, setActiveYearLabel] = React.useState<string>("");
+  const [loading, setLoading] = React.useState(false);
+  const [confirmData, setConfirmData] = React.useState(false);
+  const [confirmPhotos, setConfirmPhotos] = React.useState(false);
+
+  // Fetch active year on mount
+  React.useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/years/active", { cache: "no-store" });
+        const data = await res.json();
+        if (data.year) {
+          setActiveYearId(data.year.id);
+          setActiveYearLabel(`Tahun ${data.year.year}`);
+        } else {
+          setActiveYearId("");
+          setActiveYearLabel("Semua Tahun");
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  async function handleResetData() {
+    if (!activeYearId) {
+      toast.error("Pilih tahun terlebih dahulu di header sebelum menghapus data");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/settings/reset-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yearId: activeYearId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Data belanja berhasil dihapus");
+        onChanged();
+      } else {
+        toast.error(data.error || "Gagal menghapus data");
+      }
+    } catch {
+      toast.error("Gagal menghapus data");
+    } finally {
+      setLoading(false);
+      setConfirmData(false);
+    }
+  }
+
+  async function handleResetPhotos() {
+    if (!activeYearId) {
+      toast.error("Pilih tahun terlebih dahulu di header sebelum menghapus foto");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/settings/reset-photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yearId: activeYearId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message || "Foto berhasil dihapus");
+        onChanged();
+      } else {
+        toast.error(data.error || "Gagal menghapus foto");
+      }
+    } catch {
+      toast.error("Gagal menghapus foto");
+    } finally {
+      setLoading(false);
+      setConfirmPhotos(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Warning card */}
+      <div className="rounded-lg border border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30 p-4">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">
+              Zona Berbahaya
+            </p>
+            <p className="text-xs text-rose-600 dark:text-rose-400">
+              Operasi di bawah ini akan menghapus data secara permanen untuk{" "}
+              <strong>{activeYearLabel || "tahun aktif"}</strong>.
+              Pastikan Anda memilih tahun yang benar di header sebelum melanjutkan.
+              Data tahun lain tidak akan terpengaruh.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Active year info */}
+      <Card>
+        <CardContent className="p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Tahun Aktif Saat Ini</p>
+            <p className="text-sm font-semibold">{activeYearLabel || "—"}</p>
+          </div>
+          {!activeYearId && (
+            <Badge variant="outline" className="text-rose-600 border-rose-300">
+              ⚠️ Pilih tahun dulu
+            </Badge>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Hapus Semua Data Belanja */}
+      <Card className={activeYearId ? "" : "opacity-60"}>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                <Trash2 className="h-4 w-4 text-rose-600" />
+                Hapus Semua Data Belanja
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Hapus semua No. Pesanan + item barang untuk tahun aktif.
+                Foto dokumentasi tidak dihapus (tetap ada di library).
+              </p>
+            </div>
+          </div>
+          <AlertDialog open={confirmData} onOpenChange={setConfirmData}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                disabled={!activeYearId || loading}
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                Hapus Data Belanja
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Hapus semua data belanja?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Semua No. Pesanan dan item barang untuk{" "}
+                  <strong>{activeYearLabel}</strong> akan dihapus permanen.
+                  Foto dokumentasi tetap aman. Aksi ini tidak bisa dibatalkan.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={loading}>Batal</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleResetData}
+                  disabled={loading}
+                  className="bg-rose-600 hover:bg-rose-700"
+                >
+                  {loading ? "Menghapus..." : "Ya, Hapus Semua"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
+
+      {/* Hapus Semua Foto */}
+      <Card className={activeYearId ? "" : "opacity-60"}>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                <ImageIcon className="h-4 w-4 text-rose-600" />
+                Hapus Semua Foto Dokumentasi
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Hapus semua foto dokumentasi + foto terhubung ke pesanan untuk tahun aktif.
+                Data belanja (No. Pesanan + barang) tidak dihapus.
+              </p>
+            </div>
+          </div>
+          <AlertDialog open={confirmPhotos} onOpenChange={setConfirmPhotos}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                disabled={!activeYearId || loading}
+              >
+                <Trash2 className="h-4 w-4 mr-1.5" />
+                Hapus Semua Foto
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Hapus semua foto dokumentasi?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Semua foto untuk <strong>{activeYearLabel}</strong> akan dihapus
+                  permanen — termasuk foto di library Dokumentasi dan foto yang
+                  terhubung ke pesanan. Aksi ini tidak bisa dibatalkan.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={loading}>Batal</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleResetPhotos}
+                  disabled={loading}
+                  className="bg-rose-600 hover:bg-rose-700"
+                >
+                  {loading ? "Menghapus..." : "Ya, Hapus Semua Foto"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

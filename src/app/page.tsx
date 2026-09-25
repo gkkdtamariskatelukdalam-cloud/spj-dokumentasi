@@ -279,7 +279,10 @@ export default function HomePage() {
               triggerIcon="printer"
               yearId={activeYear?.id}
             />
-            <ImportDialog onImported={() => { void refreshStats(); void refreshOrders(); }} />
+            <ImportDialog
+              onImported={() => { void refreshStats(); void refreshOrders(); }}
+              activeYearId={activeYear?.id}
+            />
             <Button
               variant="outline"
               size="sm"

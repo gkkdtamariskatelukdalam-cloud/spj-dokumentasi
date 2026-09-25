@@ -19,9 +19,10 @@ import { spjApi } from "@/lib/spj-api";
 
 interface Props {
   onImported: () => void;
+  activeYearId?: string;
 }
 
-export function ImportDialog({ onImported }: Props) {
+export function ImportDialog({ onImported, activeYearId }: Props) {
   const [open, setOpen] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -39,6 +40,10 @@ export function ImportDialog({ onImported }: Props) {
   async function handleImport() {
     if (!file) {
       toast.error("Pilih file Excel terlebih dahulu");
+      return;
+    }
+    if (!activeYearId) {
+      toast.error("Pilih tahun aktif terlebih dahulu sebelum import Excel");
       return;
     }
     setLoading(true);

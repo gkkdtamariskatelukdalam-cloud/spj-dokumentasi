@@ -31,6 +31,10 @@ export function PhotoUpload({ orderId, onUploaded, photoCount = 0 }: Props) {
   async function doUpload(files: FileList | File[], opts?: { deviceType: string; source?: string }) {
     const arr = Array.from(files);
     if (arr.length === 0) return;
+
+    // Note: yearId validation is done at page level (DocumentationTab + ImportDialog)
+    // Order detail upload doesn't need yearId check because order already has yearId
+
     setUploading(true);
 
     // Chunked upload: 5 photos per batch to stay under Vercel 4.5MB payload limit
