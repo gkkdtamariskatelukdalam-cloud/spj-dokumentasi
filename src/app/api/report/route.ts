@@ -154,15 +154,11 @@ export async function GET(req: NextRequest) {
       const baseUrl = `${protocol}://${host}`;
 
       // Read actual image dimensions for orientation detection
-      // Merge photos from TWO sources:
-      //   1. Legacy SpjPhoto (o.photos) — old upload system
-      //   2. DocumentationPhoto via PhotoOrderLink (o.photoLinks) — new many-to-many system
-      // Deduplicate by filePath to avoid showing the same photo twice
-      // (migration may have created both SpjPhoto and DocumentationPhoto for same file)
+      // Photos: only from DocumentationPhoto via PhotoOrderLink (many-to-many)
+      // SpjPhoto (legacy) is no longer used — all photos migrated to DocumentationPhoto
+      // Only include photos that actually exist (filter out orphaned links)
       const ordersWithMeta = await Promise.all(
         filteredOrders.map(async (o) => {
-          // Collect all unique photo URLs from both sources
-          const seenUrls = new Set<string>();
           const allPhotos: Array<{
             id: string;
             url: string;
@@ -173,27 +169,9 @@ export async function GET(req: NextRequest) {
             orientation: ImageOrientation;
           }> = [];
 
-          // Source 1: Legacy SpjPhoto
-          for (const p of o.photos) {
-            if (seenUrls.has(p.url)) continue;
-            seenUrls.add(p.url);
-            const orientation = await getImageOrientation(p.filePath);
-            allPhotos.push({
-              id: p.id,
-              url: p.url,
-              fileName: p.fileName,
-              filePath: p.filePath,
-              deviceType: p.deviceType,
-              source: p.source,
-              orientation,
-            });
-          }
-
-          // Source 2: DocumentationPhoto via PhotoOrderLink (many-to-many)
           for (const link of o.photoLinks) {
+            if (!link.photo) continue; // skip orphaned links (photo deleted)
             const p = link.photo;
-            if (seenUrls.has(p.url)) continue;
-            seenUrls.add(p.url);
             const orientation = await getImageOrientation(p.filePath);
             allPhotos.push({
               id: p.id,

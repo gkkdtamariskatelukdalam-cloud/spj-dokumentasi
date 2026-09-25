@@ -57,21 +57,8 @@ export async function POST(
         // Store file in database (Vercel-compatible — no filesystem writes)
         const stored = await storeFile(f);
 
-        // Create SpjPhoto record
-        const photo = await db.spjPhoto.create({
-          data: {
-            orderId: order.id,
-            fileName: f.name,
-            filePath: stored.url,
-            url: stored.url,
-            fileSize: stored.fileSize,
-            mimeType: stored.mimeType,
-            deviceType,
-            source,
-          },
-        });
-
-        // Also create DocumentationPhoto + PhotoOrderLink
+        // Create DocumentationPhoto + PhotoOrderLink (many-to-many system)
+        // No longer create SpjPhoto (legacy) — all photos use DocumentationPhoto
         const docPhoto = await db.documentationPhoto.create({
           data: {
             fileName: f.name,
@@ -81,6 +68,7 @@ export async function POST(
             mimeType: stored.mimeType,
             deviceType,
             source,
+            yearId: order.yearId, // inherit year from order
           },
         });
         await db.photoOrderLink.create({
@@ -88,12 +76,12 @@ export async function POST(
         }).catch(() => {});
 
         saved.push({
-          id: photo.id,
-          url: photo.url,
-          fileName: photo.fileName,
-          fileSize: photo.fileSize,
-          deviceType: photo.deviceType,
-          source: photo.source,
+          id: docPhoto.id,
+          url: stored.url,
+          fileName: f.name,
+          fileSize: stored.fileSize,
+          deviceType,
+          source,
         });
       } catch (storeErr) {
         console.error("storeFile error:", storeErr);

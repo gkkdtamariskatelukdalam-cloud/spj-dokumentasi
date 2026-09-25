@@ -114,9 +114,6 @@ export async function GET(
         items: {
           orderBy: { createdAt: "asc" },
         },
-        photos: {
-          orderBy: { createdAt: "desc" },
-        },
         photoLinks: {
           include: { photo: true },
           orderBy: { createdAt: "desc" },
@@ -131,11 +128,9 @@ export async function GET(
       );
     }
 
-    // Merge photos from TWO sources:
-    //   1. Legacy SpjPhoto (order.photos)
-    //   2. DocumentationPhoto via PhotoOrderLink (order.photoLinks)
-    // Deduplicate by URL to avoid showing the same photo twice
-    const seenUrls = new Set<string>();
+    // Photos: only from DocumentationPhoto via PhotoOrderLink (many-to-many)
+    // SpjPhoto (legacy) is no longer used — all photos migrated to DocumentationPhoto
+    // Only count photos that actually exist (filter out orphaned links)
     const mergedPhotos: Array<{
       id: string;
       url: string;
@@ -147,35 +142,16 @@ export async function GET(
       createdAt: Date;
     }> = [];
 
-    // Source 1: Legacy SpjPhoto
-    for (const p of order.photos) {
-      if (seenUrls.has(p.url)) continue;
-      seenUrls.add(p.url);
-      mergedPhotos.push({
-        id: p.id,
-        url: p.url,
-        fileName: p.fileName,
-        fileSize: p.fileSize,
-        deviceType: p.deviceType,
-        source: p.source,
-        caption: p.caption,
-        createdAt: p.createdAt,
-      });
-    }
-
-    // Source 2: DocumentationPhoto via PhotoOrderLink (many-to-many)
     for (const link of order.photoLinks) {
-      const p = link.photo;
-      if (seenUrls.has(p.url)) continue;
-      seenUrls.add(p.url);
+      if (!link.photo) continue; // skip orphaned links (photo deleted)
       mergedPhotos.push({
-        id: p.id,
-        url: p.url,
-        fileName: p.fileName,
-        fileSize: p.fileSize,
-        deviceType: p.deviceType,
-        source: p.source,
-        caption: p.caption,
+        id: link.photo.id,
+        url: link.photo.url,
+        fileName: link.photo.fileName,
+        fileSize: link.photo.fileSize,
+        deviceType: link.photo.deviceType,
+        source: link.photo.source,
+        caption: link.photo.caption,
         createdAt: link.createdAt,
       });
     }

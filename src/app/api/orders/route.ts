@@ -61,15 +61,15 @@ export async function GET(req: NextRequest) {
         namaToko: true,
         tanggalPesanan: true,
         tanggalBayar: true,
-        _count: { select: { photos: true, items: true, photoLinks: true } },
+        _count: { select: { photoLinks: true, items: true } },
       },
     });
 
     // Compute status for each order and filter BEFORE pagination
-    // photoCount = SpjPhoto count + PhotoOrderLink count (many-to-many)
-    // This matches what the detail API returns (merged photos from both sources)
+    // photoCount = PhotoOrderLink count (DocumentationPhoto via many-to-many)
+    // SpjPhoto is legacy and no longer used for counting
     const withStatus = allOrders.map((o) => {
-      const photoCount = o._count.photos + o._count.photoLinks;
+      const photoCount = o._count.photoLinks;
       return {
         ...o,
         photoCount,
